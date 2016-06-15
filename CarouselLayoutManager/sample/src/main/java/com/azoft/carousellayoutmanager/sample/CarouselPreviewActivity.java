@@ -29,7 +29,7 @@ public class CarouselPreviewActivity extends AppCompatActivity {
         setSupportActionBar(binding.toolbar);
 
         // create layout manager with needed params: vertical, cycle
-        final CarouselLayoutManager layoutManager = new CarouselLayoutManager(CarouselLayoutManager.VERTICAL, true);
+        final CarouselLayoutManager layoutManager = new CarouselLayoutManager(CarouselLayoutManager.HORIZONTAL, true);
         // enable zoom effect. this line can be customized
         layoutManager.setPostLayoutListener(new CarouselZoomPostLayoutListener());
 

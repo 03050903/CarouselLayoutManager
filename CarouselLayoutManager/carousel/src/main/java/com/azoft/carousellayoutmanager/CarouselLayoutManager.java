@@ -174,6 +174,7 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
     @SuppressWarnings("RefusedBequest")
     @Override
     public void scrollToPosition(final int position) {
+        //记录将要移动到的位置
         mPendingScrollPosition = position;
         requestLayout();
     }
@@ -282,18 +283,23 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
     @Override
     @CallSuper
     public void onLayoutChildren(@NonNull final RecyclerView.Recycler recycler, @NonNull final RecyclerView.State state) {
-        if (0 == state.getItemCount()) {
+        if (0 == state.getItemCount()) {//当recyclerView没有view的时候
             removeAndRecycleAllViews(recycler);
             selectItemCenterPosition(INVALID_POSITION);
             return;
         }
 
+        //初始化的时候 mDecoratedChildWidth必定为null
         if (null == mDecoratedChildWidth) {
+            //获取第一个item view
             final View view = recycler.getViewForPosition(0);
             addView(view);
+            //计算可能包含 itemDecoration 后child的具体值
             measureChildWithMargins(view, 0, 0);
 
+            //得到包含 itemDecoration 值的item宽
             mDecoratedChildWidth = getDecoratedMeasuredWidth(view);
+            //得到包含 itemDecoration 值的item高
             mDecoratedChildHeight = getDecoratedMeasuredHeight(view);
             removeAndRecycleView(view, recycler);
 
@@ -302,10 +308,15 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
             }
         }
 
+
+        /**
+         * mPendingScrollPosition在{@link #scrollToPosition(int)} 赋值
+         */
         if (INVALID_POSITION != mPendingScrollPosition) {
+            //计算移动到 pendingScrollPosition需要移动的距离
             mLayoutHelper.mScrollOffset = calculateScrollForSelectingPosition(mPendingScrollPosition, state);
             mPendingScrollPosition = INVALID_POSITION;
-        } else if (null != mPendingCarouselSavedState) {
+        } else if (null != mPendingCarouselSavedState) {//有保存值
             mLayoutHelper.mScrollOffset = calculateScrollForSelectingPosition(mPendingCarouselSavedState.mCenterItemPosition, state);
             mPendingCarouselSavedState = null;
         } else if (state.didStructureChange() && INVALID_POSITION != mCenterItemPosition) {
@@ -320,6 +331,18 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
         return VERTICAL == mOrientation ? fixedItemPosition * mDecoratedChildHeight : fixedItemPosition * mDecoratedChildWidth;
     }
 
+    /**
+     * Item所有的关键布局都在此方法中处理
+     * 1.确定centerItem的位置 {@link #generateLayoutOrder(float, RecyclerView.State)}
+     *   根据是否 {@link #mCircleLayout} 来决定基于centerItem bellow or top 该怎么显示
+     * 2.删除和回收unused child view {@link #removeAndRecycleUnusedViews(LayoutHelper, RecyclerView.Recycler)}
+     *   当{@link #scrollBy(int, RecyclerView.Recycler, RecyclerView.State)}滑动的时候child view 可能被完全隐藏了,因此这些view就要被删除和回收
+     * 3.根据Layout布局的方向来确定每个item view显示的区域 {@link #fillChildItem(int, int, int, int, LayoutOrder, RecyclerView.Recycler, int)}
+     *   在计算每个item根据center item的位置由近及远的offset值
+     *   @see #convertItemPositionDiffToSmoothPositionDiff(float)
+     *   以及对每个item做特殊的transformation {@link #mViewPostLayout}
+     * 4.设置center item 选中后的监听
+     */
     private void fillData(@NonNull final RecyclerView.Recycler recycler, @NonNull final RecyclerView.State state) {
         final float currentScrollPosition = INVALID_POSITION == mPendingScrollPosition ? getCurrentScrollPosition() : mPendingScrollPosition;
         mPendingScrollPosition = INVALID_POSITION;
@@ -356,6 +379,7 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
     }
 
     private void fillDataVertical(final RecyclerView.Recycler recycler, final int width, final int height) {
+        //计算childView的 Rect值
         final int start = (width - mDecoratedChildWidth) / 2;
         final int end = start + mDecoratedChildWidth;
 
@@ -363,6 +387,7 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
 
         for (int i = 0, count = mLayoutHelper.mLayoutOrder.length; i < count; ++i) {
             final LayoutOrder layoutOrder = mLayoutHelper.mLayoutOrder[i];
+            //vertical 计算item y 值的偏移量
             final int offset = getCardOffsetByPositionDiff(layoutOrder.mItemPositionDiff);
             final int top = centerViewTop + offset;
             final int bottom = top + mDecoratedChildHeight;
@@ -378,6 +403,7 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
 
         for (int i = 0, count = mLayoutHelper.mLayoutOrder.length; i < count; ++i) {
             final LayoutOrder layoutOrder = mLayoutHelper.mLayoutOrder[i];
+            //Horizontal 计算 item x值的偏移量
             final int offset = getCardOffsetByPositionDiff(layoutOrder.mItemPositionDiff);
             final int start = centerViewStart + offset;
             final int end = start + mDecoratedChildWidth;
@@ -390,12 +416,15 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
         for (int i = 0, size = getChildCount(); i < size; ++i) {
             final View child = getChildAt(i);
             final ViewGroup.LayoutParams lp = child.getLayoutParams();
+            //判断如果当前的子view 的LayoutParams!=RecyclerView.LayoutParams)
+            //则需要回收对应的view
             if (!(lp instanceof RecyclerView.LayoutParams)) {
                 viewsToRemove.add(child);
                 continue;
             }
             final RecyclerView.LayoutParams recyclerViewLp = (RecyclerView.LayoutParams) lp;
             final int adapterPosition = recyclerViewLp.getViewAdapterPosition();
+            //View已经被 RecyclerView回收了
             if (recyclerViewLp.isItemRemoved() || !layoutHelper.hasAdapterPosition(adapterPosition)) {
                 viewsToRemove.add(child);
             }
@@ -409,15 +438,17 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
 
     @SuppressWarnings("MethodWithTooManyParameters")
     private void fillChildItem(final int start, final int top, final int end, final int bottom, @NonNull final LayoutOrder layoutOrder, @NonNull final RecyclerView.Recycler recycler, final int i) {
+         //找到adapter对应位置的view
         final View view = bindChild(layoutOrder.mItemAdapterPosition, recycler);
         ViewCompat.setElevation(view, i);
         ItemTransformation transformation = null;
         if (null != mViewPostLayout) {
+            //item 该怎么layout,可以由 transformChild自定义
             transformation = mViewPostLayout.transformChild(view, layoutOrder.mItemPositionDiff, mOrientation);
         }
-        if (null == transformation) {
+        if (null == transformation) {//采用默认的rect来layout child view
             view.layout(start, top, end, bottom);
-        } else {
+        } else { //采用自定义的方式
             view.layout(Math.round(start + transformation.mTranslationX), Math.round(top + transformation.mTranslationY),
                     Math.round(end + transformation.mTranslationX), Math.round(bottom + transformation.mTranslationY));
 
@@ -459,18 +490,27 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
     private void generateLayoutOrder(final float currentScrollPosition, @NonNull final RecyclerView.State state) {
         mItemsCount = state.getItemCount();
         final float absCurrentScrollPosition = makeScrollPositionInRange0ToCount(currentScrollPosition, mItemsCount);
+        //正在滚动的位置 实际就是 中间item的位置
         final int centerItem = Math.round(absCurrentScrollPosition);
 
-        if (mCircleLayout && 1 < mItemsCount) {
-            final int layoutCount = Math.min(mLayoutHelper.mMaxVisibleItems * 2 + 3, mItemsCount);// + 3 = 1 (center item) + 2 (addition bellow maxVisibleItems)
+        //需要处理循环滚动,需要已 centerItem为anchor点往上或者往下计算view位置 在adapter的位置
+        //不需要处理循环滚动, 是先确定两边的view再往中间计算中间的View在Adapter的位置
+        //需要注意的是 layoutCount的值 最小值必须是 maxVisibleItem * 2 + 3(3 = 1 (center item) + 2 (addition bellow maxVisibleItems))
+        if (mCircleLayout && 1 < mItemsCount) { //处理需要循环滚动的情况
+            //计算执行布局view的个数
+            //在maxVisibleItem之外还有两个view,这点需注意
+            final int layoutCount = Math.min(mLayoutHelper.mMaxVisibleItems * 2 + 3, mItemsCount);//NOTE + 3 = 1 (center item) + 2 (addition bellow maxVisibleItems)
 
+            //回收old layout,创建或者重用新的layout
             mLayoutHelper.initLayoutOrder(layoutCount);
 
-            final int countLayoutHalf = layoutCount / 2;
-            // before center item
+            final int countLayoutHalf = layoutCount / 2; //countLayoutHalf = 2 absCurrentScrollPosition = 3
+            // before center item 由近到远计算 2.1.0
             for (int i = 1; i <= countLayoutHalf; ++i) {
+                //计算item在adapter中的位置
                 final int position = Math.round(absCurrentScrollPosition - i + mItemsCount) % mItemsCount;
-                mLayoutHelper.setLayoutOrder(countLayoutHalf - i, position, centerItem - absCurrentScrollPosition - i);
+                //第三个参数 itemPositionDiff < 0 表示item在center之上  > 0 在center之下 = 0 代表center
+                mLayoutHelper.setLayoutOrder(countLayoutHalf - i, position, centerItem - absCurrentScrollPosition - i);//为前面初始化的layoutOrder赋值
             }
             // after center item
             for (int i = layoutCount - 1; i >= countLayoutHalf + 1; --i) {
@@ -479,8 +519,11 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
             }
             mLayoutHelper.setLayoutOrder(layoutCount - 1, centerItem, centerItem - absCurrentScrollPosition);
 
-        } else {
+        } else {//RecyclerView 不循环滚动的情况---两边往中间计算
+            //-1 +1操作是为了多计算在visibleItem上或者下的一个view
+            //开始的位置最小只能0开始
             final int firstVisible = Math.max(centerItem - mLayoutHelper.mMaxVisibleItems - 1, 0);
+            //结束的位置最大只能是 ItemCount - 1
             final int lastVisible = Math.min(centerItem + mLayoutHelper.mMaxVisibleItems + 1, mItemsCount - 1);
             final int layoutCount = lastVisible - firstVisible + 1;
 
@@ -509,6 +552,7 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
     private View bindChild(final int position, @NonNull final RecyclerView.Recycler recycler) {
         final View view = findViewForPosition(recycler, position);
 
+        //??? 未知此处的做法是否为了防止子item的parent缺失导致的问题?
         if (null == view.getParent()) {
             addView(view);
             view.requestLayout();
@@ -522,6 +566,7 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
     }
 
     private View findViewForPosition(final RecyclerView.Recycler recycler, final int position) {
+        //在RecyclerView中寻找view,如果view没有被回收 直接返回view
         for (int i = 0, size = getChildCount(); i < size; ++i) {
             final View child = getChildAt(i);
             final ViewGroup.LayoutParams lp = child.getLayoutParams();
@@ -531,12 +576,14 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
             final RecyclerView.LayoutParams recyclerLp = (RecyclerView.LayoutParams) lp;
             final int adapterPosition = recyclerLp.getViewAdapterPosition();
             if (adapterPosition == position) {
+                //如果item发生了变化 需要recyclerView 重新bind view
                 if (recyclerLp.isItemChanged()) {
                     recycler.bindViewToPosition(child, position);
                 }
                 return child;
             }
         }
+        //没有找到view,则重新绑定view
         final View view = recycler.getViewForPosition(position);
         recycler.bindViewToPosition(view, position);
         return view;
@@ -560,12 +607,15 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
         final double smoothPosition = convertItemPositionDiffToSmoothPositionDiff(itemPositionDiff);
 
         final int dimenDiff;
-        if (VERTICAL == mOrientation) {
+        //计算item左上角的值
+        if (VERTICAL == mOrientation) {// 左上角y值
             dimenDiff = (getHeightNoPadding() - mDecoratedChildHeight) / 2;
-        } else {
+        } else { //左上角的x值
             dimenDiff = (getWidthNoPadding() - mDecoratedChildWidth) / 2;
         }
         //noinspection NumericCastThatLosesPrecision
+        //Math.signum>0 = 1 Math.signum<0 = -1 要么就 = 0
+        //相当于计算x或者y轴偏移量
         return (int) Math.round(Math.signum(itemPositionDiff) * dimenDiff * smoothPosition);
     }
 
@@ -582,6 +632,7 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
      */
     @SuppressWarnings({"MagicNumber", "InstanceMethodNamingConvention"})
     protected double convertItemPositionDiffToSmoothPositionDiff(final float itemPositionDiff) {
+        //这里通过 (1 / maxVisibleItem) ^ (1/3) 这值来定义 "近" 这个概念,通过diff值跟近值对比,来计算offset值
         // generally item moves the same way above center and bellow it. So we don't care about diff sign.
         final float absIemPositionDiff = Math.abs(itemPositionDiff);
 
@@ -656,6 +707,7 @@ public class CarouselLayoutManager extends RecyclerView.LayoutManager {
      * @param currentScrollPosition any scroll position range.
      * @param count                 adapter items count
      * @return good scroll position in range of [0, count)
+     * 此方法用在cycle layout中 用于计算当前滚动的view在循环布局中的位置
      */
     private static float makeScrollPositionInRange0ToCount(final float currentScrollPosition, final int count) {
         float absCurrentScrollPosition = currentScrollPosition;
