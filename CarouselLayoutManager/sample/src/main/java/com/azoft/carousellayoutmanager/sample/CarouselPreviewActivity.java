@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.RecyclerView;
+import android.support.v7.widget.helper.ItemTouchHelper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -29,7 +30,8 @@ public class CarouselPreviewActivity extends AppCompatActivity {
         setSupportActionBar(binding.toolbar);
 
         // create layout manager with needed params: vertical, cycle
-        final CarouselLayoutManager layoutManager = new CarouselLayoutManager(CarouselLayoutManager.HORIZONTAL, true);
+        int orientation = CarouselLayoutManager.HORIZONTAL;
+        final CarouselLayoutManager layoutManager = new CarouselLayoutManager(orientation, true);
         // enable zoom effect. this line can be customized
         layoutManager.setPostLayoutListener(new CarouselZoomPostLayoutListener());
 
@@ -41,6 +43,24 @@ public class CarouselPreviewActivity extends AppCompatActivity {
         binding.list.setAdapter(adapter);
         // enable center post scrolling
         binding.list.addOnScrollListener(new CenterScrollListener());
+
+        int swipeDirection = orientation == CarouselLayoutManager.HORIZONTAL ? ItemTouchHelper.UP | ItemTouchHelper.DOWN
+                : ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT;
+        ItemTouchHelper helper = new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(
+                ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT, swipeDirection) {
+            @Override
+            public boolean onMove(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, RecyclerView.ViewHolder target) {
+                return false;
+            }
+
+            @Override
+            public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
+                   adapter.mItemsCount--;
+                   adapter.notifyItemRemoved(viewHolder.getAdapterPosition());
+            }
+        });
+
+        helper.attachToRecyclerView(binding.list);
 
         layoutManager.addOnItemSelectionListener(new CarouselLayoutManager.OnCenterItemSelectionListener() {
 
